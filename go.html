@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Открыть на бирже</title>
+<style>
+  :root { color-scheme: dark light; --bg:#0f1115; --card:#171a21; --ink:#e8eaf0; --muted:#9aa3b2; --accent:#4c8dff; }
+  @media (prefers-color-scheme: light) { :root { --bg:#f4f5f7; --card:#fff; --ink:#151821; --muted:#5d6675; } }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg); color:var(--ink); font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .card { width:min(420px,92vw); background:var(--card); border-radius:14px; padding:24px; text-align:center; }
+  a.btn { display:block; margin:14px 0 8px; padding:14px; border-radius:10px; background:var(--accent); color:#fff; font-weight:600; text-decoration:none; }
+  a.web { color:var(--muted); font-size:14px; }
+  p { color:var(--muted); margin:6px 0 0; }
+</style>
+</head>
+<body>
+<div class="card" id="card"><p>Открываю…</p></div>
+<script>
+(() => {
+  // Пакеты приложений бирж на Android: ссылка открывается в приложении, если оно установлено; иначе — сайт.
+  const ANDROID = {
+    binance: 'com.binance.dev', bybit: 'com.bybit.app', okx: 'com.okinc.okex.gp', bitget: 'com.bitget.exchange',
+    gate: 'com.gateio.gateio', kucoin: 'com.kubi.kucoin', kraken: 'com.kraken.trade', mexc: 'com.mexcpro.client',
+    htx: 'pro.huobi', bingx: 'pro.bingbon.app',
+  };
+  const NAME = { binance:'Binance', bybit:'Bybit', okx:'OKX', bitget:'Bitget', gate:'Gate', kucoin:'KuCoin', kraken:'Kraken', mexc:'MEXC', htx:'HTX', bingx:'BingX', aster:'AsterDEX', hyperliquid:'Hyperliquid', lighter:'Lighter' };
+  const q = new URLSearchParams(location.search);
+  const e = (q.get('e') || '').toLowerCase();
+  let u = q.get('u') || '';
+  try { const x = new URL(u); if (x.protocol !== 'https:') throw 0; u = x.href; } catch { document.getElementById('card').innerHTML = '<p>Неверная ссылка.</p>'; return; }
+  const ua = navigator.userAgent;
+  const isAndroid = /Android/i.test(ua), isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const name = NAME[e] || 'биржу';
+
+  if (isAndroid && ANDROID[e]) {
+    const x = new URL(u);
+    location.replace(`intent://${x.host}${x.pathname}${x.search}#Intent;scheme=https;package=${ANDROID[e]};S.browser_fallback_url=${encodeURIComponent(u)};end`);
+    setTimeout(() => show(), 1500); // если браузер не поддержал intent — кнопки
+  } else if (isIOS && ANDROID[e]) {
+    show(); // на iPhone приложение открывается только по нажатию
+  } else {
+    location.replace(u); // компьютер или биржа без приложения — сайт
+  }
+
+  function show() {
+    const card = document.getElementById('card');
+    card.innerHTML = '';
+    const a = document.createElement('a'); a.className = 'btn'; a.href = u; a.textContent = `Открыть ${name}`;
+    const w = document.createElement('a'); w.className = 'web'; w.href = u; w.target = '_blank'; w.rel = 'noopener'; w.textContent = 'открыть на сайте';
+    const p = document.createElement('p'); p.textContent = 'Если приложение биржи установлено, откроется оно.';
+    card.append(a, w, p);
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Открыть в MetaScalp</title>
+<style>
+  :root { color-scheme: dark light; --bg:#0f1115; --card:#171a21; --ink:#e8eaf0; --muted:#9aa3b2; --ok:#2fbf71; --bad:#e5534b; --warn:#e0a030; --accent:#4c8dff; --line:rgba(127,127,127,.18); }
+  @media (prefers-color-scheme: light) { :root { --bg:#f4f5f7; --card:#fff; --ink:#151821; --muted:#5d6675; } }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .card { width:min(520px,94vw); background:var(--card); border-radius:14px; padding:22px 24px 18px; box-shadow:0 8px 30px rgba(0,0,0,.25); margin:24px 0; }
+  h1 { font-size:15px; margin:0; color:var(--muted); font-weight:600; }
+  .coin { font:700 26px/1.2 ui-monospace,Consolas,monospace; margin:4px 0 12px; }
+  .status { padding:10px 12px; border-radius:10px; background:rgba(127,127,127,.12); margin-bottom:12px; }
+  .status.ok { background:rgba(47,191,113,.15); color:var(--ok); }
+  .status.bad { background:rgba(229,83,75,.13); color:var(--bad); }
+  .status.warn { background:rgba(224,160,48,.15); color:var(--warn); }
+  ul { list-style:none; padding:0; margin:0 0 12px; }
+  li { display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px solid var(--line); font-size:14px; }
+  li span:last-child { color:var(--muted); text-align:right; }
+  li.ok span:last-child { color:var(--ok); } li.bad span:last-child { color:var(--bad); }
+  .row { display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap; }
+  label { color:var(--muted); font-size:13px; }
+  input { width:90px; padding:6px 8px; border-radius:8px; border:1px solid rgba(127,127,127,.35); background:transparent; color:var(--ink); }
+  button { padding:7px 14px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; }
+  details { margin-top:14px; color:var(--muted); font-size:13px; }
+  details ol { padding-left:18px; margin:8px 0 0; } details li { display:list-item; border:0; padding:2px 0; }
+  summary { cursor:pointer; }
+  .inst { color:var(--muted); font-size:13px; margin-bottom:8px; } .inst a { color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Открыть в MetaScalp</h1>
+  <div class="coin" id="coin">—</div>
+  <div class="status" id="status">Ищу MetaScalp на этом компьютере…</div>
+  <ul id="list"></ul>
+  <div class="inst" id="instances"></div>
+  <div class="row">
+    <label for="tab">Вкладка в MetaScalp:</label><input id="tab" value="OI">
+    <button id="retry">Повторить</button>
+  </div>
+  <details>
+    <summary>Как настроить (один раз)</summary>
+    <ol>
+      <li>В MetaScalp создайте вкладку (можно в отдельном окне) и назовите её <b>OI</b>.</li>
+      <li>Добавьте в неё стаканы нужных подключений — например Binance фьючерсы, Gate спот и т.д.</li>
+      <li>Нажимайте кнопку под сигналом: все стаканы вкладки переключатся на монету сигнала, окно выйдет на передний план. Стаканы бирж, где монеты нет, не меняются.</li>
+      <li>Без вкладки OI откроется комбо-раскладка MetaScalp (её стаканы настраиваются в самом MetaScalp).</li>
+      <li>Если браузер спросит доступ к приложениям на устройстве — разрешите. Нужен запущенный MetaScalp на этом ПК.</li>
+    </ol>
+  </details>
+</div>
+<script>
+(() => {
+  const PORTS = Array.from({ length: 11 }, (_, i) => 17845 + i);
+  // ExchangeId MetaScalp → id биржи в OI Tracker
+  const EX = { 2:'binance', 3:'gate', 4:'bybit', 6:'bybit', 5:'kucoin', 7:'bitget', 8:'mexc', 10:'okx', 11:'bingx', 12:'htx', 13:'bitmart', 15:'hyperliquid', 16:'upbit', 17:'aster', 19:'lighter', 24:'whitebit', 28:'phemex', 29:'dydx', 32:'kraken', 36:'bitmex' };
+  const q = new URLSearchParams(location.search);
+  const coin = (q.get('c') || '').toUpperCase();
+  const venues = (q.get('v') || '').split(',').filter(Boolean);
+  const patterns = q.getAll('p').filter(Boolean);
+  const $ = (id) => document.getElementById(id);
+  const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+  const normBase = (b) => String(b || '').replace(/^k(?=[A-Z]{2,})/, '').toUpperCase().replace(/^(1000000|100000|10000|1000|100|1M)(?=[A-Z]{2,})/, '').replace(/^XBT$/, 'BTC');
+  const show = (cls, text) => { const s = $('status'); s.className = 'status ' + cls; s.textContent = text; };
+  const item = (cls, a, b) => { const li = document.createElement('li'); li.className = cls; li.innerHTML = '<span></span><span></span>'; li.children[0].textContent = a; li.children[1].textContent = b; $('list').append(li); };
+  const sig = (ms) => { const c = new AbortController(); setTimeout(() => c.abort(), ms); return c.signal; };
+  const pick = (o, ...keys) => { for (const k of keys) if (o && o[k] !== undefined) return o[k]; };
+  let base = '';
+  const api = async (path, method = 'GET', body) => {
+    const r = await fetch(base + path, { method, headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined, signal: sig(5000) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    return j;
+  };
+
+  $('coin').textContent = coin || (patterns[0] || '—');
+  $('tab').value = store.get('ms_tab') || 'OI';
+
+  // Все запущенные MetaScalp (обычный и бета могут работать одновременно — на разных портах).
+  const verNum = (v) => String(v || '').split('.').map((x) => x.padStart(6, '0')).join('.');
+  async function findInstances() {
+    const res = await Promise.all(PORTS.map((port) => fetch(`http://127.0.0.1:${port}/ping`, { signal: sig(1500) })
+      .then((r) => r.json()).then((j) => (j && j.app === 'MetaScalp' ? { port, version: j.version || '' } : null)).catch(() => null)));
+    return res.filter(Boolean).sort((a, b) => (verNum(b.version) > verNum(a.version) ? 1 : -1)); // новее — первым
+  }
+  // Выбор: тот, что пользователь выбрал раньше; иначе самый новый (бета обычно новее).
+  async function findPort() {
+    const all = await findInstances();
+    if (!all.length) return null;
+    const cached = Number(store.get('ms_port'));
+    const cur = all.find((x) => x.port === cached) || all[0];
+    const box = $('instances');
+    box.innerHTML = '';
+    if (all.length > 1) {
+      box.append(`Открыто ${all.length} MetaScalp. Сейчас: версия ${cur.version || '?'} (порт ${cur.port}). Переключить на: `);
+      for (const x of all.filter((y) => y !== cur)) {
+        const a = document.createElement('a'); a.href = '#'; a.textContent = `версию ${x.version || '?'} (порт ${x.port})`;
+        a.onclick = (e) => { e.preventDefault(); store.set('ms_port', String(x.port)); run(); };
+        box.append(a, ' ');
+      }
+    }
+    return cur.port;
+  }
+
+  const tickerCache = new Map();
+  async function resolveTicker(connId, isSpot) {
+    if (!tickerCache.has(connId)) tickerCache.set(connId, api(`/api/connections/${connId}/tickers`).then((j) => j.tickers || j.Tickers || []).catch(() => []));
+    const list = await tickerCache.get(connId);
+    const cands = list.filter((t) => normBase(pick(t, 'BaseAsset', 'baseAsset')) === coin);
+    const rank = (t) => { const qa = String(pick(t, 'QuoteAsset', 'quoteAsset') || '').toUpperCase(); return ['USDT', 'USDC', 'USD', 'KRW'].indexOf(qa) + 1 || 9; };
+    cands.sort((a, b) => rank(a) - rank(b));
+    return cands[0] ? pick(cands[0], 'Name', 'name') : null;
+  }
+
+  // Комбо-раскладка MetaScalp (набор стаканов задаётся в настройках комбо самого терминала)
+  async function combo() {
+    const syms = [...new Set([coin && `${coin}USDT`, coin && `1000${coin}USDT`, ...patterns.map((p) => p.split(':').pop().replace(/\.[pmo]$/, ''))].filter(Boolean))];
+    for (const ticker of syms) { try { await api('/api/combo', 'POST', { ticker }); return ticker; } catch {} }
+    return null;
+  }
+
+  async function single() { // запасной путь: один стакан через change-ticker (только поле tickerPattern)
+    for (const tickerPattern of patterns) {
+      try { await api('/api/change-ticker', 'POST', { tickerPattern }); return tickerPattern; } catch {}
+    }
+    return null;
+  }
+
+  async function run() {
+    $('list').innerHTML = '';
+    const tabName = ($('tab').value || 'OI').trim();
+    store.set('ms_tab', tabName);
+    if (!coin && !patterns.length) { show('bad', 'В ссылке нет монеты.'); return; }
+    show('', 'Ищу MetaScalp на этом компьютере…');
+    const port = await findPort();
+    if (!port) { show('bad', 'MetaScalp не найден. Запустите терминал на этом ПК и нажмите «Повторить».'); return; }
+    base = `http://127.0.0.1:${port}`;
+
+    let conns, ui;
+    try { [conns, ui] = await Promise.all([api('/api/connections'), api('/api/ui/state')]); }
+    catch (e) { await fallback(tabName, `MetaScalp ответил ошибкой: ${e.message}`); return; }
+    const byId = new Map((conns.connections || conns.Connections || []).map((c) => [pick(c, 'Id', 'id'), c]));
+
+    let win = null, tab = null;
+    for (const w of ui.windows || []) for (const t of w.tabs || []) if (!tab && String(t.name || '').trim().toLowerCase() === tabName.toLowerCase()) { win = w; tab = t; }
+    if (!tab || !coin) { await fallback(tabName); return; }
+
+    const want = new Set(venues);
+    let done = 0, viaBinding = 0;
+    for (const d of tab.documents || []) {
+      if (d.kind !== 'orderBook' || !d.connectionId) continue;
+      const c = byId.get(d.connectionId);
+      const venue = c && EX[pick(c, 'ExchangeId', 'exchangeId')];
+      const isSpot = c && Number(pick(c, 'MarketType', 'marketType')) === 0;
+      const label = c ? `${pick(c, 'Name', 'name') || pick(c, 'Exchange', 'exchange')}` : `подключение ${d.connectionId}`;
+      if (!venue) { item('', label, 'биржа не распознана'); continue; }
+      if (want.size && !want.has(`${venue}.${isSpot ? 's' : 'f'}`)) { item('', label, 'монеты нет / не отмечено'); continue; }
+      const ticker = await resolveTicker(d.connectionId, isSpot);
+      if (!ticker) { item('bad', label, `${coin} нет в MetaScalp`); continue; }
+      try {
+        await api(`/api/ui/documents/${d.externalId}/ticker`, 'PUT', { ticker });
+        item('ok', label, ticker); done++;
+      } catch (e) {
+        // запасной путь: связка стакана (link number) через change-ticker
+        const link = Number(d.linkNumber);
+        const ex = String(pick(c, 'Exchange', 'exchange') || '').replace(/\s+/g, '');
+        if (link >= 2 && link <= 500) {
+          try { await api('/api/change-ticker', 'POST', { tickerPattern: `${ex}:${ticker}${isSpot ? '' : '.p'}`, binding: String(link).padStart(3, '0') }); item('ok', label, `${ticker} (через связку ${link})`); done++; viaBinding++; continue; } catch {}
+        }
+        item('bad', label, e.message === 'Failed to fetch' ? 'браузер не пустил запрос' : e.message);
+      }
+    }
+    try { await api(`/api/ui/tabs/${tab.id}/activate`, 'POST', {}); } catch {}
+    if (win && win.type !== 'MainWorkspace') { try { await api(`/api/ui/windows/${win.id}/activate`, 'POST', { windowType: win.type === 'LightWorkspace' ? 'lightWorkspace' : 'workspace' }); } catch {} }
+    if (done) show('ok', `Готово: ${coin} открыт в ${done} стакан${done === 1 ? 'е' : 'ах'} вкладки «${tabName}». Эту страницу можно закрыть.`);
+    else show('bad', `Ни один стакан вкладки «${tabName}» не переключён — см. список ниже.`);
+  }
+
+  // Нет вкладки OI (или старый MetaScalp): сначала комбо, потом один стакан.
+  async function fallback(tabName, why) {
+    const c = await combo();
+    if (c) { show('ok', `Открыто комбо MetaScalp: ${c}. Чтобы открывались стаканы только отмеченных бирж — создайте вкладку «${tabName}» (как — ниже).`); return; }
+    const p = await single();
+    if (p) { show('warn', `Открыт один стакан: ${p}. Для всех стаканов — вкладка «${tabName}» (как — ниже).`); return; }
+    show('bad', why || `Не удалось открыть ${coin || patterns[0]}: нет вкладки «${tabName}», комбо не открылось. Проверьте подключение биржи в MetaScalp.`);
+  }
+
+  $('retry').addEventListener('click', run);
+  if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)) show('warn', 'MetaScalp работает на компьютере — откройте эту ссылку на ПК, где запущен терминал.');
+  else run();
+})();
+</script>
+</body>
+</html>

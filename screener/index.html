@@ -7,46 +7,87 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Скринер</title>
 <style>
-:root{--bg:#f6f7f9;--text:#151a21;--muted:#6b7480;--accent:#2f6fec}
-@media(prefers-color-scheme:dark){:root{--bg:#0f1216;--text:#e6e9ee;--muted:#8a93a0;--accent:#5b8dff}}
+:root{--bg:#f6f7f9;--panel:#fff;--line:#e3e6eb;--text:#151a21;--muted:#6b7480;--accent:#2f6fec;--down:#d93025}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1216;--panel:#161a20;--line:#262c35;--text:#e6e9ee;--muted:#8a93a0;--accent:#5b8dff;--down:#ff5a4e}}
+*{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 "Segoe UI",system-ui,sans-serif;display:grid;place-items:center;min-height:90vh}
-.box{max-width:420px;padding:24px;text-align:center}
-.sp{width:28px;height:28px;border:3px solid var(--muted);border-top-color:var(--accent);border-radius:50%;margin:0 auto 14px;animation:r 1s linear infinite}
-@keyframes r{to{transform:rotate(360deg)}}
+.box{width:min(360px,92vw);padding:26px 24px;background:var(--panel);border:1px solid var(--line);border-radius:12px;text-align:center}
+h1{font-size:20px;margin:0 0 4px}
 .muted{color:var(--muted);font-size:14px}
+input,button{font:inherit;width:100%;border-radius:8px;padding:10px 12px}
+input{background:var(--bg);color:var(--text);border:1px solid var(--line);margin:16px 0 10px;text-align:center;letter-spacing:.5px}
+button{background:var(--accent);border:0;color:#fff;cursor:pointer}button:disabled{opacity:.5;cursor:default}
+.err{color:var(--down);font-size:14px;min-height:21px;margin-top:8px}
+.sp{width:26px;height:26px;border:3px solid var(--muted);border-top-color:var(--accent);border-radius:50%;margin:14px auto 0;animation:r 1s linear infinite}
+@keyframes r{to{transform:rotate(360deg)}}
+.hide{display:none}
 </style>
 </head>
 <body>
-<div class="box"><div class="sp" id="sp"></div><div id="msg">Открываю скринер…</div><div class="muted" id="sub"></div></div>
+<div class="box">
+  <h1>Скринер цен</h1>
+  <div class="muted" id="state">Подключаюсь…</div>
+  <form id="f" class="hide" autocomplete="on">
+    <input id="pw" type="password" name="password" placeholder="Пароль" autocomplete="current-password" required>
+    <button id="go" type="submit">Войти</button>
+  </form>
+  <div class="err" id="err"></div>
+  <div class="sp" id="sp"></div>
+</div>
 <script>
-// Постоянная ссылка на скринер: https://dmak2402-tech.github.io/screener/#<ключ>
-// Адрес туннеля меняется при перезапуске ПК/скринера — скринер сам публикует текущий адрес в ветку screener-data (where.json),
-// а эта страница читает его и переходит на <адрес>/s/<ключ>. Ключ после # на сервер GitHub не уходит.
+// Постоянная ссылка на скринер: https://dmak2402-tech.github.io/screener/
+// Человек вводит пароль (свой, задан в админке скринера) → получает ключ → переход на <адрес туннеля>/s/<ключ>.
+// Адрес туннеля меняется при перезапуске — скринер публикует текущий в ветку screener-data (where.json).
+// Вход запоминается на устройстве (ключ в localStorage). #logout — забыть вход. #<ключ> — старая личная ссылка.
 (function(){
-  var REPO='dmak2402-tech/dmak2402-tech.github.io', BR='screener-data';
-  var key=(location.hash||'').replace(/^#/,'').trim();
-  var msg=document.getElementById('msg'), sub=document.getElementById('sub');
-  if(!/^[A-Za-z0-9_-]{16,64}$/.test(key)){ document.getElementById('sp').style.display='none'; msg.textContent='Неполная ссылка.'; sub.textContent='Попросите владельца скринера прислать ссылку ещё раз.'; return; }
-  var tries=0;
-  function timeout(ms){ return typeof AbortSignal!=='undefined'&&AbortSignal.timeout?AbortSignal.timeout(ms):undefined; }
+  var REPO='dmak2402-tech/dmak2402-tech.github.io', BR='screener-data', LSK='screenerKey';
+  var $=function(id){return document.getElementById(id);};
+  var LS={get:function(){try{return localStorage.getItem(LSK);}catch(e){return null;}},set:function(v){try{localStorage.setItem(LSK,v);}catch(e){}},del:function(){try{localStorage.removeItem(LSK);}catch(e){}}};
+  var h=(location.hash||'').replace(/^#/,'').trim();
+  if(h==='logout') LS.del(); else if(/^[A-Za-z0-9_-]{16,64}$/.test(h)) LS.set(h);
+  if(h) history.replaceState(null,'',location.pathname);
+  var base=null, tries=0, timer=null;
+  function to(ms){ return typeof AbortSignal!=='undefined'&&AbortSignal.timeout?AbortSignal.timeout(ms):undefined; }
   function getWhere(){
-    return fetch('https://api.github.com/repos/'+REPO+'/contents/where.json?ref='+BR+'&t='+Date.now(),{headers:{accept:'application/vnd.github.raw+json'},cache:'no-store',signal:timeout(8000)})
+    return fetch('https://api.github.com/repos/'+REPO+'/contents/where.json?ref='+BR+'&t='+Date.now(),{headers:{accept:'application/vnd.github.raw+json'},cache:'no-store',signal:to(8000)})
       .then(function(r){ if(!r.ok) throw 0; return r.json(); })
-      .catch(function(){ return fetch('https://raw.githubusercontent.com/'+REPO+'/'+BR+'/where.json?t='+Date.now(),{cache:'no-store',signal:timeout(8000)}).then(function(r){ if(!r.ok) throw 0; return r.json(); }); });
+      .catch(function(){ return fetch('https://raw.githubusercontent.com/'+REPO+'/'+BR+'/where.json?t='+Date.now(),{cache:'no-store',signal:to(8000)}).then(function(r){ if(!r.ok) throw 0; return r.json(); }); });
   }
-  function attempt(){
-    tries++;
-    getWhere().then(function(w){
+  function resolve(){
+    return getWhere().then(function(w){
       var u=String(w&&w.url||'').replace(/\/+$/,'');
-      if(!/^https:\/\/[a-z0-9.-]+$/i.test(u)) throw 'nourl';
-      if(w.down) throw 'down';
-      return fetch(u+'/ping',{cache:'no-store',signal:timeout(8000)}).then(function(r){ if(!r.ok) throw 'ping'; return r.text(); }).then(function(t){ if(t.trim()!=='ok') throw 'ping'; location.replace(u+'/s/'+key); });
-    }).catch(function(){
-      msg.textContent='Скринер сейчас недоступен';
-      sub.textContent='Компьютер со скринером выключен или перезапускается. Страница подключится сама, как только он заработает (попытка '+tries+').';
-      setTimeout(attempt, tries<6?10000:30000);
+      if(!/^https:\/\/[a-z0-9.-]+$/i.test(u)) throw 0;
+      return fetch(u+'/ping',{cache:'no-store',signal:to(8000)}).then(function(r){ if(!r.ok) throw 0; return r.text(); }).then(function(t){ if(t.trim()!=='ok') throw 0; return u; });
     });
   }
+  function down(){
+    base=null; tries++;
+    $('state').textContent='Скринер сейчас недоступен — компьютер со скринером выключен или перезапускается. Подключусь сам (попытка '+tries+').';
+    $('sp').className='sp'; $('go').disabled=true;
+    clearTimeout(timer); timer=setTimeout(attempt, tries<6?10000:30000);
+  }
+  function attempt(){
+    resolve().then(function(u){
+      base=u; tries=0;
+      var k=LS.get();
+      if(k){ location.replace(u+'/s/'+k); return; }
+      $('state').textContent='Введите пароль, который вам дал владелец скринера.';
+      $('f').className=''; $('sp').className='sp hide'; $('go').disabled=false; $('pw').focus();
+    }).catch(down);
+  }
+  $('f').onsubmit=function(e){
+    e.preventDefault();
+    var pw=$('pw').value.trim(); if(!pw||!base) return;
+    $('go').disabled=true; $('err').textContent='';
+    fetch(base+'/login',{method:'POST',headers:{'content-type':'text/plain'},body:JSON.stringify({password:pw}),signal:to(10000)})
+      .then(function(r){ return r.json().catch(function(){return {};}).then(function(j){ return {s:r.status,j:j}; }); })
+      .then(function(x){
+        if(x.s===200&&x.j.key){ LS.set(x.j.key); location.replace(base+'/s/'+x.j.key); return; }
+        $('go').disabled=false;
+        $('err').textContent= x.s===401?('Неверный пароль'+(x.j.left>0?' (осталось попыток: '+x.j.left+')':'')) : x.s===403?'Доступ по этому паролю закрыт' : x.s===429?('Слишком много попыток — подождите '+(x.j.waitMin||10)+' мин') : 'Ошибка входа, попробуйте ещё раз';
+      })
+      .catch(function(){ $('go').disabled=false; down(); });
+  };
   attempt();
 })();
 </script>

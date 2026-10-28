@@ -87,12 +87,20 @@
       .then((r) => r.json()).then((j) => (j && j.app === 'MetaScalp' ? { port, version: j.version || '' } : null)).catch(() => null)));
     return res.filter(Boolean).sort((a, b) => (verNum(b.version) > verNum(a.version) ? 1 : -1)); // новее — первым
   }
-  // Выбор: тот, что пользователь выбрал раньше; иначе самый новый (бета обычно новее).
-  async function findPort() {
+  // Выбор: тот, что пользователь выбрал раньше; иначе тот, где есть вкладка OI; иначе самый новый.
+  async function hasTab(port, name) {
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}/api/ui/state`, { signal: sig(2500) }).then((x) => x.json());
+      return (r.windows || []).some((w) => (w.tabs || []).some((t) => String(t.name || '').trim().toLowerCase() === name.toLowerCase()));
+    } catch { return false; }
+  }
+  async function findPort(tabName) {
     const all = await findInstances();
     if (!all.length) return null;
     const cached = Number(store.get('ms_port'));
-    const cur = all.find((x) => x.port === cached) || all[0];
+    let cur = all.find((x) => x.port === cached);
+    if (!cur && all.length > 1) { const flags = await Promise.all(all.map((x) => hasTab(x.port, tabName))); cur = all[flags.indexOf(true)]; }
+    cur = cur || all[0];
     const box = $('instances');
     box.innerHTML = '';
     if (all.length > 1) {
@@ -136,7 +144,7 @@
     store.set('ms_tab', tabName);
     if (!coin && !patterns.length) { show('bad', 'В ссылке нет монеты.'); return; }
     show('', 'Ищу MetaScalp на этом компьютере…');
-    const port = await findPort();
+    const port = await findPort(tabName);
     if (!port) { show('bad', 'MetaScalp не найден. Запустите терминал на этом ПК и нажмите «Повторить».'); return; }
     base = `http://127.0.0.1:${port}`;
 
@@ -149,6 +157,8 @@
     for (const w of ui.windows || []) for (const t of w.tabs || []) if (!tab && String(t.name || '').trim().toLowerCase() === tabName.toLowerCase()) { win = w; tab = t; }
     if (!tab || !coin) { await fallback(tabName); return; }
 
+    const books = (tab.documents || []).filter((d) => d.kind === 'orderBook' && d.connectionId);
+    if (!books.length) { await fallback(tabName, null, `Во вкладке «${tabName}» нет стаканов — добавьте туда стаканы нужных бирж.`); return; }
     const want = new Set(venues);
     let done = 0, viaBinding = 0;
     for (const d of tab.documents || []) {
@@ -181,9 +191,9 @@
   }
 
   // Нет вкладки OI (или старый MetaScalp): сначала комбо, потом один стакан.
-  async function fallback(tabName, why) {
+  async function fallback(tabName, why, hint) {
     const c = await combo();
-    if (c) { show('ok', `Открыто комбо MetaScalp: ${c}. Чтобы открывались стаканы только отмеченных бирж — создайте вкладку «${tabName}» (как — ниже).`); return; }
+    if (c) { show('ok', `Открыто комбо MetaScalp: ${c}. ${hint || `Чтобы открывались стаканы только отмеченных бирж — создайте вкладку «${tabName}» (как — ниже).`}`); return; }
     const p = await single();
     if (p) { show('warn', `Открыт один стакан: ${p}. Для всех стаканов — вкладка «${tabName}» (как — ниже).`); return; }
     show('bad', why || `Не удалось открыть ${coin || patterns[0]}: нет вкладки «${tabName}», комбо не открылось. Проверьте подключение биржи в MetaScalp.`);

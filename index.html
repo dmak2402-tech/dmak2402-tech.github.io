@@ -23,6 +23,7 @@
   li.ok span:last-child { color:var(--ok); } li.bad span:last-child { color:var(--bad); }
   .row { display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap; }
   label { color:var(--muted); font-size:13px; }
+  select { padding:6px 8px; border-radius:8px; border:1px solid rgba(127,127,127,.35); background:transparent; color:var(--ink); }
   input { width:90px; padding:6px 8px; border-radius:8px; border:1px solid rgba(127,127,127,.35); background:transparent; color:var(--ink); }
   button { padding:7px 14px; border:0; border-radius:8px; background:var(--accent); color:#fff; font-weight:600; cursor:pointer; }
   details { margin-top:14px; color:var(--muted); font-size:13px; }
@@ -39,13 +40,18 @@
   <ul id="list"></ul>
   <div class="inst" id="instances"></div>
   <div class="row">
+    <label for="mode">Открывать:</label>
+    <select id="mode"><option value="combo">комбо — все подключённые биржи</option><option value="tab">вкладку OI — только отмеченные биржи</option></select>
+  </div>
+  <div class="row" id="tabRow">
     <label for="tab">Вкладка в MetaScalp:</label><input id="tab" value="OI">
     <button id="retry">Повторить</button>
   </div>
   <details>
     <summary>Как настроить (один раз)</summary>
     <ol>
-      <li>В MetaScalp создайте вкладку (можно в отдельном окне) и назовите её <b>OI</b>.</li>
+      <li><b>Комбо</b> (по умолчанию) — как кнопка комбо в MetaScalp: отдельное окно со стаканами монеты на всех подключённых биржах. Настраивать ничего не нужно.</li>
+      <li><b>Вкладка OI</b> — только отмеченные в OI Tracker биржи. В MetaScalp создайте вкладку (можно в отдельном окне) и назовите её <b>OI</b>.</li>
       <li>Добавьте в неё стаканы нужных подключений — например Binance фьючерсы, Gate спот и т.д.</li>
       <li>Назначьте каждому стакану свою связку (номер 2, 3, 4…, у разных стаканов — разные). Через неё MetaScalp надёжно переключает стакан.</li>
       <li>Нажимайте кнопку под сигналом: все стаканы вкладки переключатся на монету сигнала, окно выйдет на передний план. Стаканы бирж, где монеты нет, не меняются.</li>
@@ -80,6 +86,10 @@
 
   $('coin').textContent = coin || (patterns[0] || '—');
   $('tab').value = store.get('ms_tab') || 'OI';
+  $('mode').value = store.get('ms_mode') || 'combo';
+  const syncMode = () => { $('tabRow').style.display = $('mode').value === 'tab' ? '' : 'none'; };
+  $('mode').addEventListener('change', () => { store.set('ms_mode', $('mode').value); syncMode(); run(); });
+  syncMode();
 
   // Все запущенные MetaScalp (обычный и бета могут работать одновременно — на разных портах).
   const verNum = (v) => String(v || '').split('.').map((x) => x.padStart(6, '0')).join('.');
@@ -148,6 +158,13 @@
     const port = await findPort(tabName);
     if (!port) { show('bad', 'MetaScalp не найден. Запустите терминал на этом ПК и нажмите «Повторить».'); return; }
     base = `http://127.0.0.1:${port}`;
+
+    // Режим «комбо» (по умолчанию): отдельное окно MetaScalp со стаканами монеты на всех подключённых биржах
+    if ($('mode').value === 'combo' && coin) {
+      const c = await combo();
+      if (c) { show('ok', `Открыто комбо ${c}: стаканы на всех подключённых биржах. Эту страницу можно закрыть.`); return; }
+      item('bad', 'Комбо', 'не открылось — пробую вкладку OI');
+    }
 
     let conns, ui;
     try { [conns, ui] = await Promise.all([api('/api/connections'), api('/api/ui/state')]); }

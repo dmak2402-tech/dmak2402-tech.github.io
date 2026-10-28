@@ -23,12 +23,13 @@
   const ANDROID = {
     binance: 'com.binance.dev', bybit: 'com.bybit.app', okx: 'com.okinc.okex.gp', bitget: 'com.bitget.exchange',
     gate: 'com.gateio.gateio', kucoin: 'com.kubi.kucoin', kraken: 'com.kraken.trade', mexc: 'com.mexcpro.client',
-    htx: 'pro.huobi', bingx: 'pro.bingbon.app',
+    htx: 'pro.huobi', bingx: 'pro.bingbon.app', tradingview: 'com.tradingview.tradingviewapp',
   };
-  const NAME = { binance:'Binance', bybit:'Bybit', okx:'OKX', bitget:'Bitget', gate:'Gate', kucoin:'KuCoin', kraken:'Kraken', mexc:'MEXC', htx:'HTX', bingx:'BingX', aster:'AsterDEX', hyperliquid:'Hyperliquid', lighter:'Lighter' };
+  const NAME = { binance:'Binance', bybit:'Bybit', okx:'OKX', bitget:'Bitget', gate:'Gate', kucoin:'KuCoin', kraken:'Kraken', mexc:'MEXC', htx:'HTX', bingx:'BingX', aster:'AsterDEX', hyperliquid:'Hyperliquid', lighter:'Lighter', tradingview:'TradingView' };
   const q = new URLSearchParams(location.search);
   const e = (q.get('e') || '').toLowerCase();
   let u = q.get('u') || '';
+  if (q.has('hash') || q.has('auth_date')) history.replaceState(null, '', `${location.pathname}?e=${encodeURIComponent(e)}&u=${encodeURIComponent(u)}`); // данные входа Telegram — из адреса
   try { const x = new URL(u); if (x.protocol !== 'https:') throw 0; u = x.href; } catch { document.getElementById('card').innerHTML = '<p>Неверная ссылка.</p>'; return; }
   const ua = navigator.userAgent;
   const isAndroid = /Android/i.test(ua), isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);

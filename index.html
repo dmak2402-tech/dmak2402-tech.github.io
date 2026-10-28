@@ -69,6 +69,10 @@
   const coin = (q.get('c') || '').toUpperCase();
   const venues = (q.get('v') || '').split(',').filter(Boolean);
   const patterns = q.getAll('p').filter(Boolean);
+  // Кнопка «вход через Telegram» добавляет к адресу id, имя и подпись пользователя — убираем их из адресной строки и истории
+  if (q.has('hash') || q.has('auth_date')) { const k = new URLSearchParams(); for (const [a, b] of q) if (['c', 'v', 'p'].includes(a)) k.append(a, b); history.replaceState(null, '', `${location.pathname}?${k}`); }
+  // Вкладку, открытую из Telegram, браузер разрешает закрыть скриптом
+  const closeSoon = () => setTimeout(() => { try { window.close(); } catch {} }, 1500);
   const $ = (id) => document.getElementById(id);
   const store = { get: (k) => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
   const normBase = (b) => String(b || '').replace(/^k(?=[A-Z]{2,})/, '').toUpperCase().replace(/^(1000000|100000|10000|1000|100|1M)(?=[A-Z]{2,})/, '').replace(/^XBT$/, 'BTC');
@@ -162,7 +166,7 @@
     // Режим «комбо» (по умолчанию): отдельное окно MetaScalp со стаканами монеты на всех подключённых биржах
     if ($('mode').value === 'combo' && coin) {
       const c = await combo();
-      if (c) { show('ok', `Открыто комбо ${c}: стаканы на всех подключённых биржах. Эту страницу можно закрыть.`); return; }
+      if (c) { show('ok', `Открыто комбо ${c}: стаканы на всех подключённых биржах.`); closeSoon(); return; }
       item('bad', 'Комбо', 'не открылось — пробую вкладку OI');
     }
 
@@ -216,7 +220,7 @@
     }
     try { await api(`/api/ui/tabs/${tab.id}/activate`, 'POST', {}); } catch {}
     if (win && win.type !== 'MainWorkspace') { try { await api(`/api/ui/windows/${win.id}/activate`, 'POST', { windowType: win.type === 'LightWorkspace' ? 'lightWorkspace' : 'workspace' }); } catch {} }
-    if (done === jobs.length && done) show('ok', `Готово: ${coin} открыт в ${done} стакан${done === 1 ? 'е' : 'ах'} вкладки «${tabName}». Эту страницу можно закрыть.`);
+    if (done === jobs.length && done) { show('ok', `Готово: ${coin} открыт в ${done} стакан${done === 1 ? 'е' : 'ах'} вкладки «${tabName}».`); closeSoon(); }
     else if (noLink) show(done ? 'warn' : 'bad', `${done ? `Переключено ${done} из ${jobs.length}. ` : ''}MetaScalp не применил команду к стаканам без связки. Назначьте каждому стакану вкладки «${tabName}» свою связку (2, 3, 4…) — кнопка будет переключать их через неё.`);
     else show(done ? 'warn' : 'bad', `Переключено ${done} из ${jobs.length} — см. список ниже.`);
   }
@@ -224,7 +228,7 @@
   // Нет вкладки OI (или старый MetaScalp): сначала комбо, потом один стакан.
   async function fallback(tabName, why, hint) {
     const c = await combo();
-    if (c) { show('ok', `Открыто комбо MetaScalp: ${c}. ${hint || `Чтобы открывались стаканы только отмеченных бирж — создайте вкладку «${tabName}» (как — ниже).`}`); return; }
+    if (c) { closeSoon(); show('ok', `Открыто комбо MetaScalp: ${c}. ${hint || `Чтобы открывались стаканы только отмеченных бирж — создайте вкладку «${tabName}» (как — ниже).`}`); return; }
     const p = await single();
     if (p) { show('warn', `Открыт один стакан: ${p}. Для всех стаканов — вкладка «${tabName}» (как — ниже).`); return; }
     show('bad', why || `Не удалось открыть ${coin || patterns[0]}: нет вкладки «${tabName}», комбо не открылось. Проверьте подключение биржи в MetaScalp.`);

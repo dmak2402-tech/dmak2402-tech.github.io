@@ -47,6 +47,7 @@
     <ol>
       <li>В MetaScalp создайте вкладку (можно в отдельном окне) и назовите её <b>OI</b>.</li>
       <li>Добавьте в неё стаканы нужных подключений — например Binance фьючерсы, Gate спот и т.д.</li>
+      <li>Назначьте каждому стакану свою связку (номер 2, 3, 4…, у разных стаканов — разные). Через неё MetaScalp надёжно переключает стакан.</li>
       <li>Нажимайте кнопку под сигналом: все стаканы вкладки переключатся на монету сигнала, окно выйдет на передний план. Стаканы бирж, где монеты нет, не меняются.</li>
       <li>Без вкладки OI откроется комбо-раскладка MetaScalp (её стаканы настраиваются в самом MetaScalp).</li>
       <li>Если браузер спросит доступ к приложениям на устройстве — разрешите. Нужен запущенный MetaScalp на этом ПК.</li>
@@ -160,34 +161,47 @@
     const books = (tab.documents || []).filter((d) => d.kind === 'orderBook' && d.connectionId);
     if (!books.length) { await fallback(tabName, null, `Во вкладке «${tabName}» нет стаканов — добавьте туда стаканы нужных бирж.`); return; }
     const want = new Set(venues);
-    let done = 0, viaBinding = 0;
-    for (const d of tab.documents || []) {
-      if (d.kind !== 'orderBook' || !d.connectionId) continue;
+    const jobs = [];
+    for (const d of books) {
       const c = byId.get(d.connectionId);
       const venue = c && EX[pick(c, 'ExchangeId', 'exchangeId')];
       const isSpot = c && Number(pick(c, 'MarketType', 'marketType')) === 0;
-      const label = c ? `${pick(c, 'Name', 'name') || pick(c, 'Exchange', 'exchange')}` : `подключение ${d.connectionId}`;
+      const link = Number(d.linkNumber);
+      const label = `${c ? (pick(c, 'Name', 'name') || pick(c, 'Exchange', 'exchange')) : `подключение ${d.connectionId}`}${link >= 2 && link <= 500 ? ` · связка ${link}` : ''}`;
       if (!venue) { item('', label, 'биржа не распознана'); continue; }
       if (want.size && !want.has(`${venue}.${isSpot ? 's' : 'f'}`)) { item('', label, 'монеты нет / не отмечено'); continue; }
       const ticker = await resolveTicker(d.connectionId, isSpot);
       if (!ticker) { item('bad', label, `${coin} нет в MetaScalp`); continue; }
-      try {
-        await api(`/api/ui/documents/${d.externalId}/ticker`, 'PUT', { ticker });
-        item('ok', label, ticker); done++;
-      } catch (e) {
-        // запасной путь: связка стакана (link number) через change-ticker
-        const link = Number(d.linkNumber);
-        const ex = String(pick(c, 'Exchange', 'exchange') || '').replace(/\s+/g, '');
-        if (link >= 2 && link <= 500) {
-          try { await api('/api/change-ticker', 'POST', { tickerPattern: `${ex}:${ticker}${isSpot ? '' : '.p'}`, binding: String(link).padStart(3, '0') }); item('ok', label, `${ticker} (через связку ${link})`); done++; viaBinding++; continue; } catch {}
-        }
-        item('bad', label, e.message === 'Failed to fetch' ? 'браузер не пустил запрос' : e.message);
-      }
+      jobs.push({ d, c, label, ticker, isSpot, link });
+    }
+    // 1) переключить каждый стакан напрямую
+    for (const j of jobs) { try { await api(`/api/ui/documents/${j.d.externalId}/ticker`, 'PUT', { ticker: j.ticker }); j.put = true; } catch (e) { j.err = e.message; } }
+    // 2) проверить, что MetaScalp действительно переключил (команда асинхронная и может не дойти до панели)
+    const norm = (x) => String(x || '').toUpperCase().replace(/[-_/\s]/g, '');
+    if (jobs.some((j) => j.put)) {
+      await new Promise((r) => setTimeout(r, 1500));
+      const ui2 = await api('/api/ui/state').catch(() => null);
+      const now = new Map();
+      for (const w of ui2?.windows || []) for (const t of w.tabs || []) for (const d of t.documents || []) now.set(d.externalId, d.ticker);
+      for (const j of jobs) j.ok = j.put && norm(now.get(j.d.externalId)).includes(norm(j.ticker));
+    }
+    // 3) не переключился — через связку стакана (change-ticker с binding)
+    for (const j of jobs.filter((x) => !x.ok && x.link >= 2 && x.link <= 500)) {
+      const ex = String(pick(j.c, 'Exchange', 'exchange') || '').replace(/\s+/g, '');
+      try { await api('/api/change-ticker', 'POST', { tickerPattern: `${ex}:${j.ticker}${j.isSpot ? '' : '.p'}`, binding: String(j.link).padStart(3, '0') }); j.viaLink = true; }
+      catch (e) { j.err = e.message; }
+    }
+    let done = 0, noLink = 0;
+    for (const j of jobs) {
+      if (j.ok) { item('ok', j.label, j.ticker); done++; }
+      else if (j.viaLink) { item('ok', j.label, `${j.ticker} (через связку)`); done++; }
+      else { if (!(j.link >= 2 && j.link <= 500)) noLink++; item('bad', j.label, j.err ? (j.err === 'Failed to fetch' ? 'браузер не пустил запрос' : j.err) : (j.link >= 2 ? 'MetaScalp не переключил' : 'не переключился — нужна связка')); }
     }
     try { await api(`/api/ui/tabs/${tab.id}/activate`, 'POST', {}); } catch {}
     if (win && win.type !== 'MainWorkspace') { try { await api(`/api/ui/windows/${win.id}/activate`, 'POST', { windowType: win.type === 'LightWorkspace' ? 'lightWorkspace' : 'workspace' }); } catch {} }
-    if (done) show('ok', `Готово: ${coin} открыт в ${done} стакан${done === 1 ? 'е' : 'ах'} вкладки «${tabName}». Эту страницу можно закрыть.`);
-    else show('bad', `Ни один стакан вкладки «${tabName}» не переключён — см. список ниже.`);
+    if (done === jobs.length && done) show('ok', `Готово: ${coin} открыт в ${done} стакан${done === 1 ? 'е' : 'ах'} вкладки «${tabName}». Эту страницу можно закрыть.`);
+    else if (noLink) show(done ? 'warn' : 'bad', `${done ? `Переключено ${done} из ${jobs.length}. ` : ''}MetaScalp не применил команду к стаканам без связки. Назначьте каждому стакану вкладки «${tabName}» свою связку (2, 3, 4…) — кнопка будет переключать их через неё.`);
+    else show(done ? 'warn' : 'bad', `Переключено ${done} из ${jobs.length} — см. список ниже.`);
   }
 
   // Нет вкладки OI (или старый MetaScalp): сначала комбо, потом один стакан.

@@ -26,6 +26,9 @@
     htx: 'pro.huobi', bingx: 'pro.bingbon.app', tradingview: 'com.tradingview.tradingviewapp',
   };
   const NAME = { binance:'Binance', bybit:'Bybit', okx:'OKX', bitget:'Bitget', gate:'Gate', kucoin:'KuCoin', kraken:'Kraken', mexc:'MEXC', htx:'HTX', bingx:'BingX', aster:'AsterDEX', hyperliquid:'Hyperliquid', lighter:'Lighter', tradingview:'TradingView' };
+  // Адреса, которые открывают приложение биржи на телефоне (universal link / app link). Binance: app.binance.com.
+  const APP_HOST = { 'www.binance.com': 'app.binance.com', 'binance.com': 'app.binance.com' };
+  const toApp = (href) => { try { const x = new URL(href); if (APP_HOST[x.host]) x.host = APP_HOST[x.host]; return x.href; } catch { return href; } };
   const q = new URLSearchParams(location.search);
   const e = (q.get('e') || '').toLowerCase();
   let u = q.get('u') || '';
@@ -34,9 +37,10 @@
   const ua = navigator.userAgent;
   const isAndroid = /Android/i.test(ua), isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   const name = NAME[e] || 'биржу';
+  const appU = (isAndroid || isIOS) ? toApp(u) : u; // на телефоне — адрес приложения
 
   if (isAndroid && ANDROID[e]) {
-    const x = new URL(u);
+    const x = new URL(appU);
     location.replace(`intent://${x.host}${x.pathname}${x.search}#Intent;scheme=https;package=${ANDROID[e]};S.browser_fallback_url=${encodeURIComponent(u)};end`);
     setTimeout(() => show(), 1500); // если браузер не поддержал intent — кнопки
   } else if (isIOS && ANDROID[e]) {
@@ -48,9 +52,9 @@
   function show() {
     const card = document.getElementById('card');
     card.innerHTML = '';
-    const a = document.createElement('a'); a.className = 'btn'; a.href = u; a.textContent = `Открыть ${name}`;
+    const a = document.createElement('a'); a.className = 'btn'; a.href = appU; a.textContent = `Открыть ${name}`;
     const w = document.createElement('a'); w.className = 'web'; w.href = u; w.target = '_blank'; w.rel = 'noopener'; w.textContent = 'открыть на сайте';
-    const p = document.createElement('p'); p.textContent = 'Если приложение биржи установлено, откроется оно.';
+    const p = document.createElement('p'); p.textContent = /Telegram|WebView|wv\)/i.test(ua) ? 'Если открылся сайт, а не приложение: откройте эту страницу в Safari/Chrome (⋯ → «Открыть в браузере») или выключите встроенный браузер в настройках Telegram.' : 'Если приложение биржи установлено, откроется оно.';
     card.append(a, w, p);
   }
 })();

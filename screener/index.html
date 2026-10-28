@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>Скринер</title>
+<style>
+:root{--bg:#f6f7f9;--text:#151a21;--muted:#6b7480;--accent:#2f6fec}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1216;--text:#e6e9ee;--muted:#8a93a0;--accent:#5b8dff}}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 "Segoe UI",system-ui,sans-serif;display:grid;place-items:center;min-height:90vh}
+.box{max-width:420px;padding:24px;text-align:center}
+.sp{width:28px;height:28px;border:3px solid var(--muted);border-top-color:var(--accent);border-radius:50%;margin:0 auto 14px;animation:r 1s linear infinite}
+@keyframes r{to{transform:rotate(360deg)}}
+.muted{color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<div class="box"><div class="sp" id="sp"></div><div id="msg">Открываю скринер…</div><div class="muted" id="sub"></div></div>
+<script>
+// Постоянная ссылка на скринер: https://dmak2402-tech.github.io/screener/#<ключ>
+// Адрес туннеля меняется при перезапуске ПК/скринера — скринер сам публикует текущий адрес в ветку screener-data (where.json),
+// а эта страница читает его и переходит на <адрес>/s/<ключ>. Ключ после # на сервер GitHub не уходит.
+(function(){
+  var REPO='dmak2402-tech/dmak2402-tech.github.io', BR='screener-data';
+  var key=(location.hash||'').replace(/^#/,'').trim();
+  var msg=document.getElementById('msg'), sub=document.getElementById('sub');
+  if(!/^[A-Za-z0-9_-]{16,64}$/.test(key)){ document.getElementById('sp').style.display='none'; msg.textContent='Неполная ссылка.'; sub.textContent='Попросите владельца скринера прислать ссылку ещё раз.'; return; }
+  var tries=0;
+  function timeout(ms){ return typeof AbortSignal!=='undefined'&&AbortSignal.timeout?AbortSignal.timeout(ms):undefined; }
+  function getWhere(){
+    return fetch('https://api.github.com/repos/'+REPO+'/contents/where.json?ref='+BR+'&t='+Date.now(),{headers:{accept:'application/vnd.github.raw+json'},cache:'no-store',signal:timeout(8000)})
+      .then(function(r){ if(!r.ok) throw 0; return r.json(); })
+      .catch(function(){ return fetch('https://raw.githubusercontent.com/'+REPO+'/'+BR+'/where.json?t='+Date.now(),{cache:'no-store',signal:timeout(8000)}).then(function(r){ if(!r.ok) throw 0; return r.json(); }); });
+  }
+  function attempt(){
+    tries++;
+    getWhere().then(function(w){
+      var u=String(w&&w.url||'').replace(/\/+$/,'');
+      if(!/^https:\/\/[a-z0-9.-]+$/i.test(u)) throw 'nourl';
+      if(w.down) throw 'down';
+      return fetch(u+'/ping',{cache:'no-store',signal:timeout(8000)}).then(function(r){ if(!r.ok) throw 'ping'; return r.text(); }).then(function(t){ if(t.trim()!=='ok') throw 'ping'; location.replace(u+'/s/'+key); });
+    }).catch(function(){
+      msg.textContent='Скринер сейчас недоступен';
+      sub.textContent='Компьютер со скринером выключен или перезапускается. Страница подключится сама, как только он заработает (попытка '+tries+').';
+      setTimeout(attempt, tries<6?10000:30000);
+    });
+  }
+  attempt();
+})();
+</script>
+</body>
+</html>
